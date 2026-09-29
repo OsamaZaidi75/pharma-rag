@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC sample for unit tests only. Not a real drug label. -->
+<document xmlns="urn:hl7-org:v3">
+  <component>
+    <structuredBody>
+      <component>
+        <section>
+          <code code="34070-3" codeSystem="2.16.840.1.113883.6.1"/>
+          <title>4 CONTRAINDICATIONS</title>
+          <text>
+            <paragraph>Testdrug is contraindicated in patients with known hypersensitivity to any component of this product.</paragraph>
+            <paragraph>Testdrug is contraindicated in patients with severe hepatic impairment.</paragraph>
+          </text>
+        </section>
+      </component>
+      <component>
+        <section>
+          <code code="34072-9" codeSystem="2.16.840.1.113883.6.1"/>
+          <title>5 WARNINGS AND PRECAUTIONS</title>
+          <text>
+            <paragraph>Patients receiving Testdrug should be monitored for signs of liver injury during the first three months of therapy. Liver function tests should be performed at baseline and periodically thereafter. If jaundice or marked elevations in hepatic enzymes occur, discontinue Testdrug immediately and investigate the cause before considering re-challenge.</paragraph>
+            <paragraph>Testdrug may cause dizziness and orthostatic hypotension, particularly during initiation of therapy and dose escalation. Patients should be advised to rise slowly from sitting or lying positions. Concomitant use of alcohol or other vasodilators may exacerbate these effects and should be undertaken with caution.</paragraph>
+            <paragraph>Renal function should be assessed before starting Testdrug and monitored at regular intervals during treatment. In patients with moderate renal impairment, the starting dose should be reduced by fifty percent. Testdrug is not recommended in patients with end-stage renal disease requiring dialysis.</paragraph>
+            <paragraph>Hypersensitivity reactions including rash, urticaria, and angioedema have been reported in clinical trials. If a severe hypersensitivity reaction occurs, discontinue Testdrug permanently and initiate appropriate supportive care. Patients with a history of angioedema should use Testdrug only under close medical supervision.</paragraph>
+            <paragraph>Testdrug may interact with strong CYP3A4 inhibitors, leading to increased plasma concentrations and a higher risk of adverse events. Co-administration with ketoconazole, itraconazole, or clarithromycin is not recommended. If concomitant use cannot be avoided, reduce the Testdrug dose and monitor closely.</paragraph>
+            <paragraph>Elderly patients may be more sensitive to the effects of Testdrug. Start at the lowest recommended dose and titrate slowly based on clinical response and tolerability. Falls have been reported in elderly patients during dose titration, so appropriate precautions should be taken.</paragraph>
+          </text>
+          <component>
+            <section>
+              <code code="34072-9" codeSystem="2.16.840.1.113883.6.1"/>
+              <title>5.1 Driving and Operating Machinery</title>
+              <text>
+                <paragraph>Testdrug may impair the ability to drive or operate machinery due to dizziness and somnolence. Patients should be warned against engaging in hazardous activities until they know how Testdrug affects them. This effect is most pronounced during the first week of treatment.</paragraph>
+              </text>
+            </section>
+          </component>
+        </section>
+      </component>
+    </structuredBody>
+  </component>
+</document>

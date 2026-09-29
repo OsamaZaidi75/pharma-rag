@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..embeddings.embedder import Embedder
 from ..generation.answer import generate_answer
+from ..ingest.ondemand import ensure_drug_indexed
 from ..retrieval.retriever import Retriever
 from ..store import vectorstore
 
@@ -50,6 +51,7 @@ class AskResponse(BaseModel):
     answer: str
     sources: list[Source]
     model: str
+    indexed_drug: str | None = None
 
 
 @app.get("/health")
@@ -74,6 +76,10 @@ def ask(req: AskRequest):
     retriever = get_retriever()
     retriever.use_reranker = req.rerank
     try:
+        new_drug = ensure_drug_indexed(req.question, retriever.embedder)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Drug lookup failed: {e}")
+    try:
         chunks = retriever.retrieve(req.question, top_k=req.top_k, top_n=req.top_n)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrieval failed: {e}")
@@ -85,4 +91,5 @@ def ask(req: AskRequest):
         answer=answer.text,
         sources=[Source(**s) for s in answer.sources],
         model=answer.model,
+        indexed_drug=new_drug,
     )

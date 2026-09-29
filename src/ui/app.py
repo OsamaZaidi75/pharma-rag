@@ -48,6 +48,9 @@ if st.button("Ask") and question.strip():
             st.error(f"Request failed: {e}")
             st.stop()
 
+    if data.get("indexed_drug"):
+        st.info(f"✨ Drug '{data['indexed_drug']}' was indexed on-demand from DailyMed.")
+
     st.subheader("Answer")
     st.write(data["answer"])
     st.caption(f"Model: {data['model']}")

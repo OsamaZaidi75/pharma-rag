@@ -4,7 +4,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.35+-FF4B4B.svg)](https://streamlit.io)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-0.5+-orange.svg)](https://www.trychroma.com/)
-[![Tests](https://img.shields.io/badge/Tests-24%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-25%20Passed-brightgreen.svg)]()
 
 Ask complex clinical and pharmacological questions about prescription drugs and receive **hallucination-resistant answers** strictly grounded in official FDA drug labels (DailyMed Structured Product Label XMLs), complete with exact citations and section breadcrumbs.
 
@@ -53,6 +53,7 @@ User Question
 | Component | Technical Choice | Rationale & Tradeoffs |
 |---|---|---|
 | **Data Source** | DailyMed SPL (HL7 v3 XML) | Official FDA-approved package inserts; structured section LOINC codes and hierarchy; no scraping required. |
+| **On-Demand Ingestion** | Dynamic DailyMed Auto-Fetching | Automatically searches, downloads, parses, and indexes missing drug labels on first mention, thread-safe. |
 | **Chunking Strategy** | Section-aware with context header | Preserves clinical section integrity (Contraindications, Adverse Reactions, Dosage) while maintaining breadcrumbs (`Drug: X \| Section: Y`). |
 | **Retrieval Engine** | Hybrid (Dense Vector + Sparse BM25) | Dense vectors capture semantic intent, while BM25 guarantees precision for exact pharmaceutical terms and brand names. |
 | **Fusion Mechanism** | Reciprocal Rank Fusion (RRF) | Combines non-calibrated vector similarity and BM25 scores without requiring complex score normalization. |
@@ -207,7 +208,8 @@ Open your browser at: [http://localhost:8501](http://localhost:8501)
       "preview": "Drug: atorvastatin | Section: Warnings and Precautions > Liver Dysfunction\nIncreases in serum transaminases have been reported..."
     }
   ],
-  "model": "llama3.1"
+  "model": "llama3.1",
+  "indexed_drug": "atorvastatin"
 }
 ```
 
@@ -221,7 +223,7 @@ python -m pytest tests/
 ```
 Output:
 ```
-============================= 24 passed in 20.42s =============================
+============================= 25 passed in 19.06s =============================
 ```
 
 ### Run Retrieval Benchmark against Golden Dataset
@@ -268,6 +270,7 @@ pharma-rag/
 │   │   ├── __init__.py
 │   │   ├── chunk.py                # Smart section-aware recursive chunker
 │   │   ├── dailymed.py             # DailyMed API client
+│   │   ├── ondemand.py             # On-demand automatic drug ingestion & indexing
 │   │   └── spl_parser.py           # HL7 v3 XML parser & section tree walker
 │   ├── retrieval/
 │   │   ├── __init__.py

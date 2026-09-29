@@ -63,7 +63,8 @@ def test_ask_endpoint_success():
     )
 
     with patch("src.api.main.get_retriever", return_value=mock_retriever), \
-         patch("src.api.main.generate_answer", return_value=mock_answer):
+         patch("src.api.main.generate_answer", return_value=mock_answer), \
+         patch("src.api.main.ensure_drug_indexed", return_value="atorvastatin"):
         response = client.post(
             "/ask",
             json={"question": "What are contraindications for atorvastatin?", "top_k": 10, "top_n": 3},
@@ -74,6 +75,19 @@ def test_ask_endpoint_success():
         assert len(data["sources"]) == 1
         assert data["sources"][0]["drug_name"] == "atorvastatin"
         assert data["model"] == "llama3.1"
+        assert data["indexed_drug"] == "atorvastatin"
+
+
+def test_ask_endpoint_lookup_failure():
+    mock_retriever = MagicMock()
+    with patch("src.api.main.get_retriever", return_value=mock_retriever), \
+         patch("src.api.main.ensure_drug_indexed", side_effect=RuntimeError("DailyMed connection timeout")):
+        response = client.post(
+            "/ask",
+            json={"question": "What are side effects of aspirintest?"},
+        )
+        assert response.status_code == 502
+        assert "Drug lookup failed" in response.json()["detail"]
 
 
 def test_ask_endpoint_validation_error():

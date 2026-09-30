@@ -149,6 +149,57 @@ def _candidate_terms(question: str) -> list[str]:
     return out
 
 
+def _resolve_spls(term: str) -> list:
+    """Find DailyMed SPLs for a drug term, best first.
+
+    Path 1: the drugnames index with strict exact/<term> <strength/form>
+    matching (avoids combination products and wrong drugs).
+    Path 2 (fallback): search SPLs directly. The drugnames endpoint sometimes
+    buries the plain generic name — e.g. "ibuprofen" returns only brand and
+    combination names in the first 100 — while spls.json reliably returns that
+    drug's labels.
+
+    Candidates from both paths are de-duplicated; single-ingredient SPLs
+    (title starts with the term, no " AND ") are preferred. If none qualify,
+    the first candidate is returned (preserves the old take-spls[0] behavior).
+    """
+    candidates: list = []
+    seen: set = set()
+
+    def _add(spls) -> None:
+        for s in spls or []:
+            if s.setid not in seen:
+                seen.add(s.setid)
+                candidates.append(s)
+
+    try:
+        names = dailymed.search_drug_names(term, pagesize=100)
+    except Exception as e:
+        log.warning("drug name search failed for %s: %s", term, e)
+        names = []
+
+    valid_names = [n for n in names if matches_drug_term(term, n)]
+    valid_names.sort(key=lambda n: (n.strip().lower() != term, len(n)))
+    for canonical_name in valid_names[:3]:
+        try:
+            _add(dailymed.search_spls(canonical_name, pagesize=3))
+        except Exception as e:
+            log.warning("spl search failed for %s: %s", canonical_name, e)
+
+    try:
+        _add(dailymed.search_spls(term, pagesize=10))
+    except Exception as e:
+        log.warning("spl search failed for %s: %s", term, e)
+
+    t = term.upper()
+    single = [
+        s
+        for s in candidates
+        if s.title.strip().upper().startswith(t) and " AND " not in s.title.upper()
+    ]
+    return single or candidates[:1]
+
+
 def ensure_drug_indexed(question: str, embedder) -> str | None:
     """Index the asked-about drug if missing. Returns matched canonical drug name or None."""
     indexed = {d.lower() for d in vectorstore.list_drugs()}
@@ -166,37 +217,14 @@ def ensure_drug_indexed(question: str, embedder) -> str | None:
         for term in terms:
             if term in indexed:
                 return None
-            try:
-                names = dailymed.search_drug_names(term, pagesize=100)
-            except Exception as e:
-                log.warning("drug name search failed for %s: %s", term, e)
+            spls = _resolve_spls(term)
+            if not spls:
                 continue
-
-            # Only accept DailyMed results that match the term exactly or <term> <strength/form>
-            valid_names = [n for n in names if matches_drug_term(term, n)]
-            if not valid_names:
-                continue
-
-            # Prefer an exact name match, then shortest canonical name
-            valid_names.sort(key=lambda n: (n.strip().lower() != term, len(n)))
-
-            for canonical_name in valid_names:
-                canonical_drug = canonical_name.strip().lower()
-                if canonical_drug in indexed or term in indexed:
-                    return None
+            for spl in spls[:3]:
                 try:
-                    spls = dailymed.search_spls(canonical_name, pagesize=3)
-                    if not spls:
-                        spls = dailymed.search_spls(term, pagesize=3)
-                    if not spls:
-                        continue
-                    spl = spls[0]
-                    log.info("on-demand indexing: %s -> %s (%s)", term, canonical_name, spl.setid)
+                    log.info("on-demand indexing: %s -> %s (%s)", term, spl.title, spl.setid)
                     xml = dailymed.download_spl_xml(spl.setid)
-
-                    # Only ever use a DailyMed-canonical name from the API response
-                    indexed_name = term if canonical_drug == term else canonical_drug
-                    sections = parse_spl(xml, drug_name=indexed_name, setid=spl.setid)
+                    sections = parse_spl(xml, drug_name=term, setid=spl.setid)
                     chunks = chunk_sections(
                         sections,
                         max_chars=settings.chunk_max_chars,
@@ -208,10 +236,10 @@ def ensure_drug_indexed(question: str, embedder) -> str | None:
                     vectorstore.upsert_chunks(
                         chunks, embeddings, delete_setids={spl.setid}
                     )
-                    log.info("indexed %d chunks for %s", len(chunks), indexed_name)
-                    return indexed_name
+                    log.info("indexed %d chunks for %s", len(chunks), term)
+                    return term
                 except Exception as e:
-                    log.warning("on-demand index failed for %s: %s", canonical_name, e)
+                    log.warning("on-demand index failed for %s (%s): %s", term, spl.setid, e)
                     continue
     return None
 

@@ -10,11 +10,13 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
 
-    llm_provider: str = "ollama"  # "ollama" | "openai"
+    llm_provider: str = "ollama"  # "ollama" | "openai" | "gemini"
     ollama_base_url: str = "http://localhost:11434/v1"
     ollama_model: str = "llama3.1"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
 
     retrieval_top_k: int = 20
     rerank_top_n: int = 5

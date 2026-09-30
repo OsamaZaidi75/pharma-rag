@@ -3,7 +3,9 @@
 Works with any OpenAI-compatible chat endpoint:
 - Ollama (default, local, free): http://localhost:11434/v1
 - OpenAI: set LLM_PROVIDER=openai and OPENAI_API_KEY
-- Graceful extractive fallback when local LLM server is offline.
+- Gemini: set LLM_PROVIDER=gemini and GEMINI_API_KEY
+  (uses Google's OpenAI-compatible endpoint; free tier is fine for demos)
+- Graceful extractive fallback when the LLM is unreachable.
 
 Conversational mode: pass `history` (prior user/assistant turns) and the model
 can resolve follow-ups ("what about its dosage?"). History is only ever used
@@ -70,6 +72,17 @@ def get_llm_client():
         if not settings.openai_api_key:
             raise RuntimeError("LLM_PROVIDER=openai but OPENAI_API_KEY is not set")
         return OpenAI(api_key=settings.openai_api_key), settings.openai_model
+    if settings.llm_provider == "gemini":
+        if not settings.gemini_api_key:
+            raise RuntimeError("LLM_PROVIDER=gemini but GEMINI_API_KEY is not set")
+        # Gemini exposes an OpenAI-compatible endpoint, so the same client works.
+        return (
+            OpenAI(
+                api_key=settings.gemini_api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            ),
+            settings.gemini_model,
+        )
     # Ollama exposes an OpenAI-compatible API; no real key needed.
     return (
         OpenAI(base_url=settings.ollama_base_url, api_key="ollama"),

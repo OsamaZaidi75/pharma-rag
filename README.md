@@ -79,9 +79,12 @@ The Streamlit app runs **standalone** — no FastAPI server needed:
 
 Notes:
 - Without an LLM, answers use the built-in extractive fallback (still cited).
-  For full LLM answers on the cloud, add `OPENAI_API_KEY` (and `LLM_PROVIDER=openai`)
-  in the app's **Secrets** — Streamlit exposes secrets as env vars, which the settings pick up.
-- Agent mode needs a chat LLM, so on the cloud it requires the OpenAI secrets above.
+  For full LLM answers on the cloud, add secrets in the app's **Secrets** page
+  (Streamlit exposes secrets as env vars, which the settings pick up) — either:
+  - Gemini (free tier): `LLM_PROVIDER=gemini` + `GEMINI_API_KEY` (get one at
+    [Google AI Studio](https://aistudio.google.com/apikey)), or
+  - OpenAI: `LLM_PROVIDER=openai` + `OPENAI_API_KEY`.
+- Agent mode needs a chat LLM, so on the cloud it requires one of the secrets above.
 - To run the UI against your own API server instead, set the `API_URL` secret/env
   (e.g. `http://localhost:8000`) — the UI switches to API mode automatically.
 

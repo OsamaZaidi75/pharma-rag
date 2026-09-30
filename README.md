@@ -62,6 +62,10 @@ streamlit run src/ui/app.py               # UI
 ```
 Try: *"What are the contraindications of atorvastatin?"*
 
+The UI has three modes (sidebar): **Ask** (single question), **Chat** (remembers the
+conversation — try a follow-up like *"what about its dosage?"*), and **Agent** (ReAct:
+the model plans its own tool calls, with a visible trace).
+
 **6. Run evals**
 ```bash
 pytest tests/                             # unit tests
@@ -74,11 +78,46 @@ python -m src.evals.run_evals --no-rerank # ablation: reranker off
 - `GET /health` → `{status, indexed_chunks}`
 - `GET /drugs` → drugs currently indexed
 - `POST /ask` → `{answer, sources[{ref, drug_name, section_title, score, preview}], model}`
+  - accepts optional `history: [{role: "user"|"assistant", content}]` for chat mode;
+    follow-ups are rewritten into standalone questions before retrieval, and the
+    response includes `rewritten_question` when a rewrite happened.
+- `POST /ask-agent` → `{answer, sources, model, trace[{iteration, thought, action, args, observation}], iterations, indexed_drugs}`
+  - ReAct agent: the model plans its own tool calls (`search_labels`,
+    `fetch_drug_label`, `list_indexed_drugs`) instead of following the fixed
+    pipeline. The trace shows every step — great for demos and debugging.
 
 ```bash
 curl -X POST localhost:8000/ask -H 'Content-Type: application/json' \
   -d '{"question": "Which drugs interact with atorvastatin?"}'
+
+# Chat mode: follow-up resolved against history
+curl -X POST localhost:8000/ask -H 'Content-Type: application/json' -d '{
+  "question": "what about its dosage?",
+  "history": [{"role": "user", "content": "What are the contraindications of atorvastatin?"},
+              {"role": "assistant", "content": "Atorvastatin is contraindicated in ..."}]
+}'
+
+# Agent mode: compare two drugs (the agent fetches + searches on its own)
+curl -X POST localhost:8000/ask-agent -H 'Content-Type: application/json' \
+  -d '{"question": "Compare the side effects of atorvastatin and rosuvastatin."}'
+
+# Terminal demo of the agent loop
+python scripts/agent_chat.py "Compare the side effects of atorvastatin and rosuvastatin"
 ```
+
+## Modes: Ask, Chat, Agent
+
+The project now demonstrates all three patterns from the chatbot → agent ladder:
+
+| | Ask (RAG pipeline) | Chat (chatbot) | Agent (ReAct) |
+|---|---|---|---|
+| Control flow | Fixed: retrieve → rerank → generate | Fixed pipeline + memory | Model decides: think → act → observe → … |
+| Memory | None | Conversation history (`st.session_state`); follow-ups rewritten via `generation/rewrite.py` | Tool-call trace; gathers its own evidence |
+| New code | — | `src/generation/rewrite.py`, `history` in `/ask` + UI chat mode | `src/agent/` (`tools.py` registry + `react.py` loop), `/ask-agent` |
+| Good for | One-shot questions | Follow-ups: "what about its dosage?" | Multi-step: "compare X and Y", unindexed drugs |
+
+Grounding is identical in all three: the agent's gathered chunks go through the same
+`generate_answer` pipeline, so citations and the medical disclaimer never change.
 
 ## Project layout
 
@@ -88,12 +127,13 @@ src/
   embeddings/  embedder.py (sentence-transformers, lazy-loaded)
   store/       vectorstore.py (ChromaDB + BM25 keyword search, RRF hybrid search)
   retrieval/   retriever.py (hybrid → cross-encoder rerank)
-  generation/  answer.py (grounded prompting, Ollama/OpenAI)
-  api/         main.py (FastAPI)
-  ui/          app.py (Streamlit demo)
+  generation/  answer.py (grounded prompting, Ollama/OpenAI) · rewrite.py (follow-up → standalone question)
+  agent/       tools.py (tool registry: search/fetch/list) · react.py (ReAct think→act→observe loop)
+  api/         main.py (FastAPI: /ask, /ask-agent)
+  ui/          app.py (Streamlit demo: Ask / Chat / Agent modes)
   evals/       golden.json · run_evals.py
-scripts/       download_labels.py · build_index.py
-tests/         unit tests (parser, chunker, RRF, API, generation)
+scripts/       download_labels.py · build_index.py · agent_chat.py (terminal agent demo)
+tests/         unit tests (parser, chunker, RRF, API, generation, ReAct parser)
 ```
 
 ## Known limitations (honest)

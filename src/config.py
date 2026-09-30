@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"  # 2.5-flash is retired for new API keys
 
     retrieval_top_k: int = 20
     rerank_top_n: int = 5

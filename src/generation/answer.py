@@ -71,7 +71,7 @@ def get_llm_client():
     if settings.llm_provider == "openai":
         if not settings.openai_api_key:
             raise RuntimeError("LLM_PROVIDER=openai but OPENAI_API_KEY is not set")
-        return OpenAI(api_key=settings.openai_api_key), settings.openai_model
+        return OpenAI(api_key=settings.openai_api_key, max_retries=3), settings.openai_model
     if settings.llm_provider == "gemini":
         if not settings.gemini_api_key:
             raise RuntimeError("LLM_PROVIDER=gemini but GEMINI_API_KEY is not set")
@@ -80,12 +80,13 @@ def get_llm_client():
             OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                max_retries=3,  # transient 429/503s (e.g. free-tier demand spikes) retry with backoff
             ),
             settings.gemini_model,
         )
     # Ollama exposes an OpenAI-compatible API; no real key needed.
     return (
-        OpenAI(base_url=settings.ollama_base_url, api_key="ollama"),
+        OpenAI(base_url=settings.ollama_base_url, api_key="ollama", max_retries=2),
         settings.ollama_model,
     )
 

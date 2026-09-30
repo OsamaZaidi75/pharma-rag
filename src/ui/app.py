@@ -1,5 +1,11 @@
 """Streamlit demo UI: Ask (single Q&A) · Chat (with memory) · Agent (ReAct).
 
+Two ways to run:
+- Standalone (default): the RAG pipeline runs in-process via local_backend.
+  This is what Streamlit Community Cloud uses — no API server needed.
+- API mode: set API_URL (env var or Streamlit secret) to point at a running
+  FastAPI backend, e.g. http://localhost:8000 for local dev.
+
 Run: streamlit run src/ui/app.py
 """
 import os
@@ -7,7 +13,46 @@ import os
 import httpx
 import streamlit as st
 
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
+API_URL = os.environ.get("API_URL", "").strip()
+try:
+    API_URL = API_URL or st.secrets.get("API_URL", "").strip()
+except Exception:
+    pass
+USE_API = bool(API_URL)
+
+if USE_API:
+
+    def get_health() -> dict:
+        return httpx.get(f"{API_URL}/health", timeout=5).json()
+
+    def get_drugs() -> list:
+        return httpx.get(f"{API_URL}/drugs", timeout=10).json().get("drugs", [])
+
+    def post_ask(payload: dict, timeout: int) -> dict:
+        resp = httpx.post(f"{API_URL}/ask", json=payload, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+
+    def post_ask_agent(payload: dict, timeout: int) -> dict:
+        resp = httpx.post(f"{API_URL}/ask-agent", json=payload, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+
+else:
+    import local_backend
+
+    def get_health() -> dict:
+        return local_backend.get_health()
+
+    def get_drugs() -> list:
+        return local_backend.get_drugs()["drugs"]
+
+    def post_ask(payload: dict, timeout: int) -> dict:
+        return local_backend.ask(**payload)
+
+    def post_ask_agent(payload: dict, timeout: int) -> dict:
+        return local_backend.ask_agent(**payload)
+
 
 st.set_page_config(page_title="Pharma RAG", page_icon="💊")
 st.title("💊 Pharma Label Q&A")
@@ -30,13 +75,15 @@ with st.sidebar:
     rerank = st.checkbox("Cross-encoder rerank", value=True)
     max_iter = st.slider("Agent max iterations", 1, 15, 8)
     try:
-        health = httpx.get(f"{API_URL}/health", timeout=5).json()
-        st.success(f"API ok · {health['indexed_chunks']} chunks indexed")
-        drugs = httpx.get(f"{API_URL}/drugs", timeout=10).json().get("drugs", [])
+        health = get_health()
+        label = "API" if USE_API else "Standalone"
+        st.success(f"{label} ok · {health['indexed_chunks']} chunks indexed")
+        drugs = get_drugs()
         if drugs:
             st.write("Indexed drugs:", ", ".join(drugs))
     except Exception as e:
-        st.error(f"API unreachable at {API_URL}: {e}")
+        where = f"API at {API_URL}" if USE_API else "pipeline"
+        st.error(f"{where} unreachable: {e}")
 
 
 def _render_sources(data):
@@ -45,12 +92,6 @@ def _render_sources(data):
         with st.expander(f"[{src['ref']}] {src['drug_name']} — {src['section_title']}"):
             st.write(src["preview"] + "…")
             st.caption(f"retrieval score: {src['score']}")
-
-
-def _post(path, payload, timeout):
-    resp = httpx.post(f"{API_URL}{path}", json=payload, timeout=timeout)
-    resp.raise_for_status()
-    return resp.json()
 
 
 # ---------------------------------------------------------------- Ask mode
@@ -62,8 +103,7 @@ if mode == "Ask":
     if st.button("Ask") and question.strip():
         with st.spinner("Searching labels and generating answer..."):
             try:
-                data = _post(
-                    "/ask",
+                data = post_ask(
                     {"question": question, "top_k": top_k, "top_n": top_n, "rerank": rerank},
                     timeout=120,
                 )
@@ -102,8 +142,7 @@ elif mode == "Chat":
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    data = _post(
-                        "/ask",
+                    data = post_ask(
                         {
                             "question": q,
                             "history": history,
@@ -151,8 +190,7 @@ else:
         with st.chat_message("assistant"):
             with st.spinner("Agent is working..."):
                 try:
-                    data = _post(
-                        "/ask-agent",
+                    data = post_ask_agent(
                         {"question": q, "max_iterations": max_iter},
                         timeout=600,
                     )

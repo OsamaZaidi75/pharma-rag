@@ -58,13 +58,32 @@ ollama pull llama3.1 && ollama serve
 **5. Ask questions**
 ```bash
 uvicorn src.api.main:app --reload          # API on :8000
-streamlit run src/ui/app.py               # UI
+streamlit run src/ui/app.py               # UI (standalone; add API_URL env to use the API instead)
 ```
 Try: *"What are the contraindications of atorvastatin?"*
 
 The UI has three modes (sidebar): **Ask** (single question), **Chat** (remembers the
 conversation — try a follow-up like *"what about its dosage?"*), and **Agent** (ReAct:
 the model plans its own tool calls, with a visible trace).
+
+## Deploying the demo (Streamlit Community Cloud)
+
+The Streamlit app runs **standalone** — no FastAPI server needed:
+
+1. On [share.streamlit.io](https://share.streamlit.io), choose **Deploy an app**,
+   repository `OsamaZaidi75/pharma-rag`, branch `main`,
+   **Main file path: `src/ui/app.py`** (forward slashes — this is Linux).
+2. Hit **Deploy**. First load takes a few minutes (embedding + reranker models download once).
+3. The index starts empty; the first question about any drug triggers on-demand
+   indexing from DailyMed (~30–60s), then it's instant.
+
+Notes:
+- Without an LLM, answers use the built-in extractive fallback (still cited).
+  For full LLM answers on the cloud, add `OPENAI_API_KEY` (and `LLM_PROVIDER=openai`)
+  in the app's **Secrets** — Streamlit exposes secrets as env vars, which the settings pick up.
+- Agent mode needs a chat LLM, so on the cloud it requires the OpenAI secrets above.
+- To run the UI against your own API server instead, set the `API_URL` secret/env
+  (e.g. `http://localhost:8000`) — the UI switches to API mode automatically.
 
 **6. Run evals**
 ```bash

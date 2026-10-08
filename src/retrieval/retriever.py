@@ -1,10 +1,13 @@
 """Retrieval: embed query -> hybrid search -> cross-encoder rerank."""
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..config import settings
 from ..embeddings.embedder import Embedder
 from ..store import vectorstore
+
+if TYPE_CHECKING:
+    from sentence_transformers import CrossEncoder
 
 
 @dataclass
@@ -21,9 +24,9 @@ class Reranker:
 
     def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
         self.model_name = model_name
-        self._model = None
+        self._model: "CrossEncoder | None" = None
 
-    def _load(self):
+    def _load(self) -> "CrossEncoder":
         if self._model is None:
             from sentence_transformers import CrossEncoder
 

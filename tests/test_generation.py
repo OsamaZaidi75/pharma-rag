@@ -62,7 +62,7 @@ def test_generate_answer_with_llm():
     mock_resp = MagicMock(choices=[mock_choice])
     mock_client.chat.completions.create.return_value = mock_resp
 
-    with patch("src.generation.answer._get_client", return_value=(mock_client, "gpt-4o-mini")):
+    with patch("src.generation.answer.get_llm_client", return_value=(mock_client, "gpt-4o-mini")):
         ans = generate_answer("What are contraindications for atorvastatin?", chunks)
         assert "Active liver disease" in ans.text or "active liver disease" in ans.text
         assert DISCLAIMER in ans.text
@@ -86,7 +86,7 @@ def test_generate_answer_llm_fallback():
     mock_client = MagicMock()
     mock_client.chat.completions.create.side_effect = RuntimeError("Connection refused")
 
-    with patch("src.generation.answer._get_client", return_value=(mock_client, "llama3.1")):
+    with patch("src.generation.answer.get_llm_client", return_value=(mock_client, "llama3.1")):
         ans = generate_answer("What are contraindications?", chunks)
         assert "Active liver disease" in ans.text or "atorvastatin" in ans.text.lower()
         assert DISCLAIMER in ans.text

@@ -97,8 +97,13 @@ python -m src.evals.run_evals --no-rerank # ablation: reranker off
 
 ## API
 
-- `GET /health` → `{status, indexed_chunks}`
-- `GET /drugs` → drugs currently indexed
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Service status and indexed chunk count |
+| `GET` | `/drugs` | Drugs currently indexed |
+| `POST` | `/ask` | Grounded answer with citations; supports chat history and follow-ups |
+| `POST` | `/ask-agent` | ReAct agent: plans its own tool calls, returns answer + full trace |
+
 - `POST /ask` → `{answer, sources[{ref, drug_name, section_title, score, preview}], model}`
   - accepts optional `history: [{role: "user"|"assistant", content}]` for chat mode;
     follow-ups are rewritten into standalone questions before retrieval, and the
@@ -151,7 +156,7 @@ src/
   retrieval/   retriever.py (hybrid → cross-encoder rerank)
   generation/  answer.py (grounded prompting, Ollama/OpenAI) · rewrite.py (follow-up → standalone question)
   agent/       tools.py (tool registry: search/fetch/list) · react.py (ReAct think→act→observe loop)
-  api/         main.py (FastAPI: /ask, /ask-agent)
+  api/         main.py (FastAPI: /health, /drugs, /ask, /ask-agent)
   ui/          app.py (Streamlit demo: Ask / Chat / Agent modes)
   evals/       golden.json · run_evals.py
 scripts/       download_labels.py · build_index.py · agent_chat.py (terminal agent demo)

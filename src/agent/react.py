@@ -39,6 +39,13 @@ _ANSWER_RE = re.compile(r"^\s*ANSWER:\s*(.*)$", re.DOTALL)
 
 
 def _system_prompt() -> str:
+    """Build the system prompt for the ReAct agent.
+
+    Lists the available tools (via ``tools.describe_tools``) and enforces the
+    strict per-turn contract: exactly one ``ACTION``/``ARGS`` pair or a final
+    ``ANSWER`` line. Also nudges the model to prefer ``search_labels`` and to
+    ground every claim in retrieved label evidence.
+    """
     return f"""You are a pharmaceutical research agent. You answer questions about drugs by using tools — never guess from memory.
 
 Available tools:
@@ -63,6 +70,16 @@ Rules:
 
 @dataclass
 class ParsedStep:
+    """One parsed model turn from the ReAct loop.
+
+    ``kind`` is ``"answer"`` when the model ended its reasoning with an
+    ``ANSWER:`` line, or ``"action"`` when it called a tool. ``thought`` holds
+    the free text before the ``ACTION:`` marker (the model's reasoning trace);
+    ``summary`` holds the one-sentence ``ANSWER`` text; ``tool_name`` and
+    ``args`` describe the tool call. Only the fields matching ``kind`` are
+    populated.
+    """
+
     kind: str  # "answer" | "action"
     thought: str = ""
     summary: str = ""
@@ -105,6 +122,17 @@ def parse_step(text: str) -> ParsedStep:
 
 @dataclass
 class AgentResult:
+    """Result of one :func:`run_agent` call.
+
+    ``answer`` is the final grounded text (produced by the standard generation
+    pipeline, so citations and the medical disclaimer match ``/ask``).
+    ``sources`` are the cited chunks; ``model`` names the answering model
+    prefixed with ``"agent(...)"``; ``trace`` is the full think/act/observe
+    log (one dict per iteration, keys: iteration, thought, action, args,
+    observation); ``iterations`` is the number of loop turns taken; and
+    ``indexed_drugs`` lists the drugs whose chunks were actually gathered.
+    """
+
     answer: str
     sources: list[dict]
     model: str
@@ -138,7 +166,17 @@ def run_agent(
     retriever: Retriever | None = None,
     max_iterations: int = 8,
 ) -> AgentResult:
-    """Run the ReAct loop for `question` and return the grounded result."""
+    """Run the ReAct loop for `question` and return the grounded result.
+
+    Each iteration asks the LLM for one turn, parses it with
+    :func:`parse_step`, executes the requested tool (if any), and feeds the
+    observation back as the next user message. Format errors and unknown tools
+    become observations rather than crashes, so the model can self-correct.
+    Chunks gathered along the way are re-ranked and passed through the
+    standard grounded generation pipeline for the final answer. Loops at most
+    `max_iterations` times; if no ``ANSWER`` arrives, the loop ends and the
+    answer is generated from whatever was gathered.
+    """
     retriever = retriever or Retriever(embedder=Embedder(settings.embedding_model))
     ctx = tools.ToolContext(retriever=retriever)
     client, model = get_llm_client()

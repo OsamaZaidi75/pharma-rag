@@ -4,18 +4,13 @@ Ask questions about prescription drugs and get answers grounded in official FDA
 labels (DailyMed SPL documents), with citations to the exact label sections.
 Built as a portfolio project for AI/LLM engineer roles.
 
-```
-Question
-   │
-   ▼
-┌─────────────┐   ┌──────────────────┐   ┌───────────────┐   ┌────────────┐
-│ Embed query │──▶│ Hybrid retrieval │──▶│ Cross-encoder │──▶│ LLM answer │
-│ (bge-small) │   │ vector + keyword │   │ rerank        │   │ + citations│
-└─────────────┘   │ fused with RRF   │   └───────────────┘   └────────────┘
-                  └──────────────────┘
-                           │
-                    ChromaDB + BM25
-                    (SPL sections, chunked)
+```mermaid
+flowchart LR
+    Q([Question]) --> E[Embed query<br/>bge-small · <code>embeddings/</code>]
+    E --> H[Hybrid retrieval<br/>vector + keyword · fused with RRF<br/><code>retrieval/</code>]
+    H --> R[Cross-encoder rerank]
+    R --> A[LLM answer + citations<br/>Ollama / OpenAI / Gemini<br/><code>generation/</code>]
+    IDX[(ChromaDB + BM25<br/>SPL sections, chunked<br/><code>store/</code>)] -. indexed labels .-> H
 ```
 
 ## Why this design

@@ -1,14 +1,24 @@
+# Dependency snapshot, 2026-10-14 (Python 3.12.3).
+# `==` pins are the exact `pip freeze` versions the daily test suite
+# (pytest tests/ --ignore=tests/test_embedder_reranker.py --ignore=tests/test_api.py
+#  → 38 passed) is verified against.
+# fastapi, sentence-transformers, streamlit, and openai keep lower bounds:
+# they are not installed in the test venv (the heavy sentence-transformers
+# wheels can't be fetched through the proxy, and fastapi/streamlit/openai are
+# not exercised by the test scope), so they aren't pinned here.
+# Pin them too if you need a byte-reproducible app/embedding setup.
 fastapi>=0.110
-uvicorn[standard]>=0.29
-chromadb>=0.5
-rank-bm25>=0.2
+uvicorn==0.54.0
+chromadb==1.5.9
+rank-bm25==0.2.2
 sentence-transformers>=3.0
 streamlit>=1.35
-pydantic>=2.0
-pydantic-settings>=2.0
-python-dotenv>=1.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.4
 openai>=1.30
-httpx>=0.27
-lxml>=5.0
-tqdm>=4.66
-pytest>=8.0
+httpx==0.28.1
+lxml==6.1.3
+tqdm==4.70.1
+numpy==2.5.3
+pytest==9.1.1

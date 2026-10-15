@@ -1,0 +1,47 @@
+name: daily-maintenance
+on:
+  schedule:
+    - cron: '30 3 * * *'  # 09:00 IST daily
+  workflow_dispatch:
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test deps
+        run: pip install pytest pydantic pydantic-settings python-dotenv rank-bm25 httpx lxml tqdm numpy chromadb
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -q --ignore=tests/test_embedder_reranker.py --ignore=tests/test_api.py 2>&1 | tee /tmp/pytest.log
+          echo "PYTEST_EXIT=${PIPESTATUS[0]}" >> $GITHUB_ENV
+
+      - name: Write daily report
+        run: |
+          mkdir -p reports/daily
+          DATE=$(date +%F)
+          PYTEST_SUMMARY=$(grep -E '[0-9]+ passed' /tmp/pytest.log | tail -1 | xargs)
+          {
+            echo "# Daily maintenance — $DATE"
+            echo ""
+            echo "- pytest: $PYTEST_SUMMARY (exit $PYTEST_EXIT)"
+            echo "- python: $(python --version 2>&1)"
+            echo "- run: scheduled GitHub Actions (ubuntu-latest)"
+          } > reports/daily/$DATE.md
+          cat reports/daily/$DATE.md
+
+      - name: Commit report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/daily/
+          git diff --cached --quiet || git commit -m "daily: automated test report ($(date +%F))"
+          git push

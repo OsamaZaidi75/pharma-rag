@@ -7,6 +7,7 @@ Transient failures (network blips, 5xx, 429) are retried with exponential
 backoff + jitter so a single hiccup doesn't kill an on-demand download.
 """
 import logging
+import os
 import random
 import time
 from dataclasses import dataclass
@@ -87,10 +88,61 @@ def search_spls(drug_name: str, pagesize: int = 10) -> list[SplSummary]:
     return results
 
 
-def download_spl_xml(setid: str) -> bytes:
-    """Download the full Structured Product Label XML for a setid."""
+def download_spl_xml(setid: str, cache_dir: str | None = None,
+                     ttl_days: float = 7.0) -> bytes:
+    """Download the full Structured Product Label XML for a setid.
+
+    When cache_dir is given, the XML is cached on disk (keyed by setid) and a
+    fresh cache hit (younger than ttl_days) skips the HTTP request entirely —
+    re-asked drugs re-index from the local copy instead of re-downloading.
+    Stale cache files are silently refreshed.
+    """
+    if cache_dir:
+        cached = _read_xml_cache(setid, cache_dir, ttl_days)
+        if cached is not None:
+            log.info("DailyMed cache hit for %s", setid)
+            return cached
     resp = _get_raw(f"{BASE_URL}/spls/{setid}.xml", timeout=60)
-    return resp.content
+    content = resp.content
+    if cache_dir:
+        _write_xml_cache(setid, cache_dir, content)
+    return content
+
+
+def _cache_file(setid: str, cache_dir: str) -> str:
+    safe = "".join(c for c in setid if c.isalnum() or c in "-_")
+    return os.path.join(cache_dir, f"{safe}.xml")
+
+
+def _read_xml_cache(setid: str, cache_dir: str, ttl_days: float) -> bytes | None:
+    """Return cached XML if present and fresher than ttl_days, else None."""
+    path = _cache_file(setid, cache_dir)
+    try:
+        age_days = (time.time() - os.path.getmtime(path)) / 86400
+    except OSError:
+        return None  # no cache file
+    if age_days > ttl_days:
+        log.info("DailyMed cache stale for %s (age %.1fd > %.1fd) — refetching",
+                 setid, age_days, ttl_days)
+        return None
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError as e:
+        log.warning("DailyMed cache read failed for %s: %s", setid, e)
+        return None
+
+
+def _write_xml_cache(setid: str, cache_dir: str, content: bytes) -> None:
+    """Persist downloaded XML atomically (tmp + rename); failures are logged only."""
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        tmp = _cache_file(setid, cache_dir) + f".tmp-{os.getpid()}"
+        with open(tmp, "wb") as f:
+            f.write(content)
+        os.replace(tmp, _cache_file(setid, cache_dir))
+    except OSError as e:
+        log.warning("DailyMed cache write failed for %s: %s", setid, e)
 
 
 def search_drug_names(query: str, pagesize: int = 20) -> list[str]:

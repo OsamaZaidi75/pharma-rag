@@ -25,5 +25,10 @@ class Settings(BaseSettings):
     chunk_max_chars: int = 1200
     chunk_overlap_chars: int = 200
 
+    # On-demand DailyMed download cache: downloaded SPL XML is cached on disk
+    # so re-asked drugs skip the HTTP round-trip. TTL in days.
+    spl_cache_dir: str = "./data/spl_cache"
+    spl_cache_ttl_days: float = 7.0
+
 
 settings = Settings()

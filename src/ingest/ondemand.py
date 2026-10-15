@@ -223,7 +223,11 @@ def ensure_drug_indexed(question: str, embedder) -> str | None:
             for spl in spls[:3]:
                 try:
                     log.info("on-demand indexing: %s -> %s (%s)", term, spl.title, spl.setid)
-                    xml = dailymed.download_spl_xml(spl.setid)
+                    xml = dailymed.download_spl_xml(
+                        spl.setid,
+                        cache_dir=settings.spl_cache_dir,
+                        ttl_days=settings.spl_cache_ttl_days,
+                    )
                     sections = parse_spl(xml, drug_name=term, setid=spl.setid)
                     chunks = chunk_sections(
                         sections,

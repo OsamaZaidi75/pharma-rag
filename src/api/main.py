@@ -80,7 +80,7 @@ def health():
         n = vectorstore.count_chunks()
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"DB unreachable: {e}")
-    return {"status": "ok", "indexed_chunks": n}
+    return {"status": "ok", "indexed_chunks": n, "llm": settings.llm_health_info()}
 
 
 @app.get("/drugs")

@@ -94,7 +94,7 @@ python -m src.evals.run_evals --no-rerank # ablation: reranker off
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Service status and indexed chunk count |
+| `GET` | `/health` | Service status, indexed chunk count, and LLM provider status (`llm.provider`/`llm.model`/`llm.configured`; no secrets) |
 | `GET` | `/drugs` | Drugs currently indexed |
 | `POST` | `/ask` | Grounded answer with citations; supports chat history and follow-ups |
 | `POST` | `/ask-agent` | ReAct agent: plans its own tool calls, returns answer + full trace |

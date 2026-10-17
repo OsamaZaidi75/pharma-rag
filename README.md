@@ -77,7 +77,8 @@ Notes:
   For full LLM answers on the cloud, add secrets in the app's **Secrets** page
   (Streamlit exposes secrets as env vars, which the settings pick up) — either:
   - Gemini (free tier): `LLM_PROVIDER=gemini` + `GEMINI_API_KEY` (get one at
-    [Google AI Studio](https://aistudio.google.com/apikey)), or
+    [Google AI Studio](https://aistudio.google.com/apikey)). Default model:
+    `gemini-3.6-flash` (pinned in `src/config.py`; 2.5-flash is retired for new API keys), or
   - OpenAI: `LLM_PROVIDER=openai` + `OPENAI_API_KEY`.
 - Agent mode needs a chat LLM, so on the cloud it requires one of the secrets above.
 - To run the UI against your own API server instead, set the `API_URL` secret/env

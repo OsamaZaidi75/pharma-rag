@@ -25,6 +25,22 @@ class Settings(BaseSettings):
     chunk_max_chars: int = 1200
     chunk_overlap_chars: int = 200
 
+    def llm_health_info(self) -> dict:
+        """LLM provider status for GET /health: {provider, model, configured}.
+
+        No secrets — only the provider name, the configured model id, and
+        whether the provider is usable. Ollama needs no API key, so it is
+        always configured.
+        """
+        provider = self.llm_provider
+        if provider == "gemini":
+            return {"provider": provider, "model": self.gemini_model,
+                    "configured": bool(self.gemini_api_key)}
+        if provider == "openai":
+            return {"provider": provider, "model": self.openai_model,
+                    "configured": bool(self.openai_api_key)}
+        return {"provider": provider, "model": self.ollama_model, "configured": True}
+
     # On-demand DailyMed download cache: downloaded SPL XML is cached on disk
     # so re-asked drugs skip the HTTP round-trip. TTL in days.
     spl_cache_dir: str = "./data/spl_cache"

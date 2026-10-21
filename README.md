@@ -128,6 +128,52 @@ curl -X POST localhost:8000/ask-agent -H 'Content-Type: application/json' \
 python scripts/agent_chat.py "Compare the side effects of atorvastatin and rosuvastatin"
 ```
 
+Example responses (trimmed for brevity):
+
+```bash
+curl localhost:8000/health
+# → {"status": "ok", "indexed_chunks": 346,
+#     "llm": {"provider": "gemini", "model": "gemini-3.6-flash", "configured": true}}
+
+curl localhost:8000/drugs
+# → {"drugs": ["atorvastatin", "rosuvastatin", "metformin"]}
+```
+
+`POST /ask` — grounded answer with per-source citations:
+
+```json
+{
+  "answer": "Atorvastatin interacts with strong CYP3A4 inhibitors ...",
+  "sources": [
+    {"ref": 1, "drug_name": "atorvastatin", "section_title": "Drug Interactions",
+     "score": 0.87, "preview": "Avoid concomitant use with strong CYP3A4 ..."}
+  ],
+  "model": "gemini-3.6-flash",
+  "indexed_drug": "atorvastatin",
+  "rewritten_question": null
+}
+```
+
+`POST /ask-agent` — answer plus the full ReAct trace:
+
+```json
+{
+  "answer": "Rosuvastatin's most common side effects are ...",
+  "sources": [
+    {"ref": 1, "drug_name": "rosuvastatin", "section_title": "Adverse Reactions",
+     "score": 0.81, "preview": "..."}
+  ],
+  "model": "gemini-3.6-flash",
+  "trace": [
+    {"iteration": 1, "thought": "I need the side effects of both drugs.",
+     "action": "fetch_drug_label", "args": {"drug": "rosuvastatin"},
+     "observation": "indexed 114 chunks"}
+  ],
+  "iterations": 3,
+  "indexed_drugs": ["rosuvastatin", "atorvastatin"]
+}
+```
+
 ## Modes: Ask, Chat, Agent
 
 The project now demonstrates all three patterns from the chatbot → agent ladder:

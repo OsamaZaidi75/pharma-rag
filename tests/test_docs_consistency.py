@@ -1,14 +1,17 @@
 """Doc-consistency guard: every route in `src/api/main.py` must appear in the
 README's API endpoint table, every `curl` example in the README's
-"Example responses" section must hit a real route, and every documented
-example response must carry exactly the keys the API returns.
+"Example responses" section must hit a real route, every documented
+example response must carry exactly the keys the API returns, and the
+documented default model must agree with the model shown in the examples.
 
 Docs and code drift silently apart (the 10-16 partial push proved it), so
 these tests fail if a route is added/renamed in the API without updating the
 README — or vice versa, if the README documents a route that no longer
 exists. The curl guard additionally catches copy-paste drift in the
-"Example responses" block (added 2026-10-18), and the response-shape guard
-catches doc drift when a response model gains or loses a field (2026-10-22).
+"Example responses" block (added 2026-10-18), the response-shape guard
+catches doc drift when a response model gains or loses a field (2026-10-22),
+and the model-agreement guard catches stale-model drift between the
+documented default and the example responses (2026-10-23).
 """
 import ast
 import json
@@ -475,3 +478,104 @@ def test_response_key_guard_catches_nested_drift():
     }
     problems = _check_example_keys(payloads, shapes)
     assert len(problems) == 1 and "bogus_nested" in problems[0], problems
+
+
+# --- model-agreement guard (2026-10-23) -------------------------------------
+
+# the documented default, e.g. "Default model:\n    `gemini-3.6-flash` (pinned ..."
+_DEFAULT_MODEL_RE = re.compile(r"Default model:\s*`([^`]+)`")
+
+
+def _default_model_in_readme(readme_text):
+    """The model named by the README's 'Default model:' line, or None."""
+    m = _DEFAULT_MODEL_RE.search(readme_text)
+    return m.group(1).strip() if m else None
+
+
+def _example_model(payloads, path):
+    """The model string a documented example response shows for a route.
+
+    /health nests it under the llm object; /ask and /ask-agent carry a
+    top-level 'model' key. Returns None when the example is absent.
+    """
+    payload = payloads.get(path)
+    if not isinstance(payload, dict):
+        return None
+    if path == "/health":
+        llm = payload.get("llm")
+        return llm.get("model") if isinstance(llm, dict) else None
+    return payload.get("model")
+
+
+def _check_model_agreement(readme_text):
+    """Assert the documented default model matches the model each example
+    response shows. Returns a list of human-readable problems (empty ==
+    consistent)."""
+    problems = []
+    default = _default_model_in_readme(readme_text)
+    if not default:
+        return ["README has no parseable 'Default model:' line"]
+    payloads = _example_payloads_in_readme(readme_text)
+    for path in ("/health", "/ask", "/ask-agent"):
+        shown = _example_model(payloads, path)
+        if shown is None:
+            problems.append(f"{path}: no example response (or no model in it)")
+        elif shown != default:
+            problems.append(
+                f"{path}: example shows model {shown!r} but the documented "
+                f"default model is {default!r}"
+            )
+    return problems
+
+
+def test_documented_models_agree_with_default():
+    """The README's 'Default model' line and the model shown in the
+    /health, /ask and /ask-agent example responses must agree — the same
+    stale-model drift family the response-shape guard now covers
+    structurally (e.g. the 2.5-flash deprecation wave)."""
+    with open(README_PATH, encoding="utf-8") as f:
+        readme_text = f.read()
+    default = _default_model_in_readme(readme_text)
+    assert default, "README must name a default model"
+    problems = _check_model_agreement(readme_text)
+    assert not problems, "model drift between docs and examples:\n" + "\n".join(
+        problems
+    )
+
+
+def test_model_agreement_guard_catches_health_drift():
+    """Drift detection: a /health example showing a different model than the
+    documented default must be flagged."""
+    snippet = (
+        "Notes:\n"
+        "Default model: `gemini-3.6-flash` (pinned in `src/config.py`)\n"
+        "\n"
+        "Example responses:\n"
+        "\n"
+        "```bash\n"
+        "curl localhost:8000/health\n"
+        '# → {"status": "ok", "llm": {"provider": "gemini", '
+        '"model": "gemini-2.5-flash", "configured": true}}\n'
+        "```\n"
+    )
+    problems = _check_model_agreement(snippet)
+    assert any("/health" in p and "gemini-2.5-flash" in p for p in problems), problems
+
+
+def test_model_agreement_guard_catches_ask_drift():
+    """Drift detection: a /ask example showing a different model than the
+    documented default must be flagged."""
+    snippet = (
+        "Notes:\n"
+        "Default model: `gemini-3.6-flash`\n"
+        "\n"
+        "Example responses:\n"
+        "\n"
+        "`POST /ask` — grounded answer:\n"
+        "\n"
+        "```json\n"
+        '{"answer": "x", "model": "gpt-4o-mini"}\n'
+        "```\n"
+    )
+    problems = _check_model_agreement(snippet)
+    assert any("/ask" in p and "gpt-4o-mini" in p for p in problems), problems

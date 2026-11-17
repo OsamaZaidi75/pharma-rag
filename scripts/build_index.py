@@ -59,8 +59,8 @@ def main() -> None:
         all_chunks.extend(chunks)
     print(f"Parsed {len(xml_files)} labels -> {len(all_chunks)} chunks")
 
-    # 2. Embed (loads the model once)
-    print(f"Loading embedding model: {settings.embedding_model}")
+    # 2. Embed via the NVIDIA API (batched)
+    print(f"Embedding model (NVIDIA API): {settings.embedding_model}")
     embedder = Embedder(settings.embedding_model)
     texts = [c.content for c in all_chunks]
     embeddings = []

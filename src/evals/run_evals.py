@@ -5,7 +5,7 @@ Metrics:
   expected section appears in the top-k retrieved chunks.
 - MRR: mean reciprocal rank of the first correct chunk.
 
-Run: python -m src.evals.run_evals [--no-rerank]
+Run: python -m src.evals.run_evals
 """
 import argparse
 import json
@@ -33,7 +33,10 @@ def is_hit(chunks, expected_drug: str, expected_section: str) -> int | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--no-rerank", action="store_true")
+    # Deprecated no-op: cross-encoder reranking was removed with the torch
+    # removal (2026-11-18); kept so old commands don't error.
+    parser.add_argument("--no-rerank", action="store_true",
+                        help="deprecated: reranking was removed; ignored")
     parser.add_argument("--top-k", type=int, default=settings.retrieval_top_k)
     args = parser.parse_args()
 
@@ -61,7 +64,7 @@ def main() -> None:
     print("-" * 75)
     print(f"hit@{args.top_k}: {hits}/{n} = {hits / n:.2%}")
     print(f"MRR:        {sum(reciprocal_ranks) / n:.3f}")
-    print(f"reranker:   {'off' if args.no_rerank else 'on'}")
+    print("reranker:   removed (RRF order is final)")
 
 
 if __name__ == "__main__":

@@ -4,14 +4,13 @@ Ask questions about prescription drugs and get answers grounded in official FDA
 labels (DailyMed SPL documents), with citations to the exact label sections.
 Built as a portfolio project for AI/LLM engineer roles.
 
-Live demo: https://pharma-rag.129-80-41-146.nip.io/
+Live demo: https://pharma-rag.osamazaidi.com/
 
 ```mermaid
 flowchart LR
-    Q([Question]) --> E[Embed query<br/>bge-small · <code>embeddings/</code>]
+    Q([Question]) --> E[Embed query<br/>NVIDIA nemotron-3.5-embed-8b · <code>embeddings/</code>]
     E --> H[Hybrid retrieval<br/>vector + keyword · fused with RRF<br/><code>retrieval/</code>]
-    H --> R[Cross-encoder rerank]
-    R --> A[LLM answer + citations<br/>NVIDIA / Ollama / OpenAI / Gemini<br/><code>generation/</code>]
+    H --> A[LLM answer + citations<br/>NVIDIA / Ollama / OpenAI / Gemini<br/><code>generation/</code>]
     IDX[(ChromaDB + BM25<br/>SPL sections, chunked<br/><code>store/</code>)] -. indexed labels .-> H
 ```
 
@@ -22,8 +21,7 @@ flowchart LR
 | DailyMed SPL XML, not web scraping | Official FDA labels, structured sections, stable API, no auth |
 | Chunk by label section | Keeps contraindications/dosage/warnings topically pure; better than fixed windows |
 | Hybrid search (ChromaDB cosine + BM25 keyword, RRF fusion) | Drug names are exact-match heavy ("atorvastatin" vs "a statin") — keyword search catches what vectors miss *(Tradeoff: BM25 runs over the full corpus in Python, fine at this scale)* |
-| Cross-encoder rerank | Cheap precision boost on the top-20 before generation |
-| Local embeddings (bge-small) + extractive fallback | Whole pipeline answers at **₹0** with no LLM key |
+| Hosted embeddings (NVIDIA nemotron-3.5-embed-8b, 4096-dim) | No torch in the image (the old local model made it ~3.5 GB); same `NVIDIA_API_KEY` as the LLM |
 | Strict grounded prompting | Every claim cited `[1]`; "not in the labels" instead of hallucinating; medical disclaimer appended |
 | Hand-rolled evals (hit@k, MRR) | Retrieval quality measured against a golden set, not vibes |
 
@@ -41,7 +39,7 @@ cp .env.example .env
 python scripts/download_labels.py --drugs atorvastatin metformin lisinopril
 ```
 
-**3. Build the index** (downloads bge-small ~130MB once, CPU fine)
+**3. Build the index** (embeds via the NVIDIA API — needs `NVIDIA_API_KEY` in `.env`, see step 4)
 ```bash
 python scripts/build_index.py
 # ...or pre-index in one step (download + index, no intermediate files):
@@ -52,8 +50,10 @@ python scripts/preindex.py --drugs atorvastatin metformin lisinopril
 ```bash
 # in .env: LLM_PROVIDER=nvidia (default) + NVIDIA_API_KEY=<your key>
 # Base URL and model are env-overridable: NVIDIA_BASE_URL, NVIDIA_MODEL.
-# With no key set, /ask answers with the built-in extractive fallback
-# (still cited, ₹0); only Agent mode needs a working LLM.
+# The key is required for embeddings (retrieval/indexing) as well as LLM
+# answers — there is no local embedding fallback. If the LLM call itself
+# fails, /ask answers with the built-in extractive fallback (still cited);
+# only Agent mode needs a working LLM.
 # Local alternatives: LLM_PROVIDER=ollama (ollama pull llama3.1 && ollama
 # serve), =gemini + GEMINI_API_KEY, or =openai + OPENAI_API_KEY.
 ```
@@ -84,10 +84,17 @@ docker run -p 8000:8000 -v pharma-data:/app/data --env-file .env pharma-rag
 - The container listens on `$PORT` (default 8000). The only secret it needs
   is `NVIDIA_API_KEY` in the env file; the model and base URL default to
   `nvidia/nemotron-3-ultra-550b-a55b` and `https://integrate.api.nvidia.com/v1`
-  and are overridable via `NVIDIA_MODEL` / `NVIDIA_BASE_URL`.
-- The `/app/data` volume holds the ChromaDB index (`data/chroma`), the
-  DailyMed SPL cache (`data/spl_cache`) and the downloaded embedding/reranker
-  models (`data/hf`) — persist it or the first question re-downloads everything.
+  and are overridable via `NVIDIA_MODEL` / `NVIDIA_BASE_URL`. The same key
+  authenticates embeddings (`EMBEDDING_MODEL`, default
+  `nvidia/nemotron-3.5-embed-8b`).
+- The `/app/data` volume holds the ChromaDB index (`data/chroma`) and the
+  DailyMed SPL cache (`data/spl_cache`) — persist it or the index is rebuilt
+  from scratch on restart.
+- **Vector store:** local ChromaDB by default. Set both `QDRANT_URL` and
+  `QDRANT_API_KEY` in the env file to use Qdrant Cloud instead (collection
+  `pharma_rag`, created automatically, 4096-dim Cosine); either one missing
+  means Chroma. The Qdrant collection starts empty — re-index via
+  `POST /index` after switching (see below).
 - The index starts empty. Pre-index the demo drugs once the container is up
   (each takes ~30–60s on first index; already-indexed drugs are skipped):
   ```bash
@@ -96,7 +103,12 @@ docker run -p 8000:8000 -v pharma-data:/app/data --env-file .env pharma-rag
   ```
   Without pre-indexing, the first question about any drug triggers the same
   on-demand indexing from DailyMed (~30–60s), then it's instant.
-- First load takes a few minutes (embedding + reranker models download once).
+- First load is fast (no model downloads — embeddings are API calls).
+- **Upgrading from a version with local embeddings:** the old ChromaDB index
+  is incompatible (384-dim local vectors vs 4096-dim API vectors) — clear
+  `/app/data/chroma` in the volume (or drop the `pharma-data` volume)
+  before starting the new image, then re-index via `POST /index` above.
+  The old `data/hf` model cache in the volume is dead weight and can go too.
 
 Notes:
 - Without an LLM, answers use the built-in extractive fallback (still cited).
@@ -115,7 +127,6 @@ Notes:
 ```bash
 pytest tests/                             # unit tests
 python -m src.evals.run_evals             # retrieval hit@k / MRR on golden set
-python -m src.evals.run_evals --no-rerank # ablation: reranker off
 ```
 
 ## API
@@ -215,7 +226,7 @@ The project now demonstrates all three patterns from the chatbot → agent ladde
 
 | | Ask (RAG pipeline) | Chat (chatbot) | Agent (ReAct) |
 |---|---|---|---|
-| Control flow | Fixed: retrieve → rerank → generate | Fixed pipeline + memory | Model decides: think → act → observe → … |
+| Control flow | Fixed: retrieve → generate | Fixed pipeline + memory | Model decides: think → act → observe → … |
 | Memory | None | Conversation history (sent as `history`); follow-ups rewritten via `generation/rewrite.py` | Tool-call trace; gathers its own evidence |
 | New code | — | `src/generation/rewrite.py`, `history` in `/ask` + UI chat mode | `src/agent/` (`tools.py` registry + `react.py` loop), `/ask-agent` |
 | Good for | One-shot questions | Follow-ups: "what about its dosage?" | Multi-step: "compare X and Y", unindexed drugs |
@@ -228,9 +239,9 @@ Grounding is identical in all three: the agent's gathered chunks go through the 
 ```
 src/
   ingest/      dailymed.py (API client) · spl_parser.py (SPL XML → sections) · chunk.py
-  embeddings/  embedder.py (sentence-transformers, lazy-loaded)
-  store/       vectorstore.py (ChromaDB + BM25 keyword search, RRF hybrid search)
-  retrieval/   retriever.py (hybrid → cross-encoder rerank)
+  embeddings/  embedder.py (NVIDIA API embeddings, batched, input_type query/passage)
+  store/       vectorstore.py (Qdrant Cloud or local ChromaDB + BM25 keyword search, RRF hybrid search)
+  retrieval/   retriever.py (embed query → hybrid search, RRF order is final)
   generation/  answer.py (grounded prompting, NVIDIA/Ollama/OpenAI/Gemini) · rewrite.py (follow-up → standalone question)
   agent/       tools.py (tool registry: search/fetch/list) · react.py (ReAct think→act→observe loop)
   api/         main.py (FastAPI: /health, /drugs, /ask, /ask-agent, /index; serves frontend/dist)
@@ -252,6 +263,7 @@ Dockerfile     one container: FastAPI + built React frontend (see Deploying the 
 
 ## Cost
 
-With no LLM key, the extractive fallback answers at ₹0 (local embeddings
-only). With `NVIDIA_API_KEY` set, answers use NVIDIA's API (see your NVIDIA
-plan for pricing). With OpenAI (`gpt-4o-mini`), roughly ₹2–5 per 100 questions.
+Embeddings and LLM answers both use the NVIDIA API (one key,
+`NVIDIA_API_KEY` — see your NVIDIA plan for pricing). If the LLM call
+fails, answers fall back to cited extractive excerpts at no cost. With
+OpenAI (`gpt-4o-mini`), roughly ₹2–5 per 100 questions.

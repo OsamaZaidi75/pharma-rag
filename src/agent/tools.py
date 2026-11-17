@@ -1,7 +1,7 @@
 """Tool registry for the ReAct agent.
 
 Each tool is a plain Python function wrapping an existing module:
-- search_labels     -> retrieval.retriever (hybrid search + rerank)
+- search_labels     -> retrieval.retriever (hybrid search, RRF fusion)
 - fetch_drug_label  -> ingest.ondemand (download + index a missing label)
 - list_indexed_drugs -> store.vectorstore
 

@@ -10,9 +10,17 @@
 #   curl -X POST localhost:8000/index -H 'Content-Type: application/json' \
 #     -d '{"drugs": ["atorvastatin", "metformin", "lisinopril"]}'
 #
-# The /app/data volume holds the ChromaDB index (data/chroma), the DailyMed
-# SPL cache (data/spl_cache) and the downloaded embedding/reranker models
-# (data/hf) — persist it or the first question re-downloads everything.
+# The /app/data volume holds the ChromaDB index (data/chroma) and the
+# DailyMed SPL cache (data/spl_cache) — persist it or the index is rebuilt
+# from scratch on restart. (Embeddings go through the NVIDIA API now, so
+# there are no downloaded models to persist.)
+# Vector store: local ChromaDB by default; set QDRANT_URL + QDRANT_API_KEY
+# in the env file to use Qdrant Cloud instead (collection `pharma_rag`).
+#
+# UPGRADING from a version with local embeddings: the old ChromaDB index is
+# incompatible (384-dim local vectors vs 4096-dim API vectors) — clear
+# /app/data/chroma in the volume (or drop the pharma-data volume) before
+# starting the new image, then re-index via POST /index (see below).
 
 # ---- Stage 1: build the React frontend -------------------------------------
 FROM node:22-alpine AS frontend
@@ -29,9 +37,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=8000 \
     CHROMA_DIR=/app/data/chroma \
-    SPL_CACHE_DIR=/app/data/spl_cache \
-    HF_HOME=/app/data/hf \
-    SENTENCE_TRANSFORMERS_HOME=/app/data/hf
+    SPL_CACHE_DIR=/app/data/spl_cache
 WORKDIR /app
 
 # Runtime deps only (no streamlit/pytest — the container serves the React UI).

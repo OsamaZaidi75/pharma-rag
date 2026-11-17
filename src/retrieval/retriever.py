@@ -1,13 +1,17 @@
-"""Retrieval: embed query -> hybrid search -> cross-encoder rerank."""
+"""Retrieval: embed query -> hybrid search (vector + BM25, RRF fusion).
+
+The cross-encoder reranker was removed with the torch removal (2026-11-18):
+reranking needed sentence-transformers, which dragged torch into the image.
+RRF ordering is now the final ranking. The `use_reranker` / `rerank` flags
+are kept as accepted-but-ignored no-ops so existing callers (API, evals,
+Streamlit) and the API contract don't break.
+"""
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ..config import settings
 from ..embeddings.embedder import Embedder
 from ..store import vectorstore
-
-if TYPE_CHECKING:
-    from sentence_transformers import CrossEncoder
 
 
 @dataclass
@@ -16,33 +20,7 @@ class RetrievedChunk:
     drug_name: str
     section_title: str
     content: str
-    score: float  # rerank score if reranked, else RRF score
-
-
-class Reranker:
-    """Cross-encoder reranker, loaded lazily (local, free)."""
-
-    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
-        self.model_name = model_name
-        self._model: "CrossEncoder | None" = None
-
-    def _load(self) -> "CrossEncoder":
-        if self._model is None:
-            from sentence_transformers import CrossEncoder
-
-            self._model = CrossEncoder(self.model_name)
-        return self._model
-
-    def rerank(self, query: str, chunks: list[dict]) -> list[dict]:
-        if not chunks:
-            return []
-        model = self._load()
-        pairs = [(query, c["content"]) for c in chunks]
-        scores = model.predict(pairs, show_progress_bar=False)
-        for c, s in zip(chunks, scores):
-            c["rerank_score"] = float(s)
-        chunks.sort(key=lambda c: c["rerank_score"], reverse=True)
-        return chunks
+    score: float  # RRF score
 
 
 class Retriever:
@@ -52,13 +30,9 @@ class Retriever:
         use_reranker: bool | None = None,
     ):
         self.embedder = embedder or Embedder(settings.embedding_model)
+        # Deprecated no-op: reranking was removed with the torch removal.
+        # Kept so existing callers keep working; the value is ignored.
         self.use_reranker = settings.use_reranker if use_reranker is None else use_reranker
-        self._reranker: Reranker | None = None
-
-    def _get_reranker(self) -> Reranker:
-        if self._reranker is None:
-            self._reranker = Reranker()
-        return self._reranker
 
     def retrieve(
         self,
@@ -71,8 +45,6 @@ class Retriever:
 
         q_emb = self.embedder.embed_one(query)
         candidates = vectorstore.hybrid_search(query, q_emb, top_k=top_k)
-        if self.use_reranker:
-            candidates = self._get_reranker().rerank(query, candidates)
 
         out = []
         for c in candidates[:top_n]:
@@ -82,7 +54,7 @@ class Retriever:
                     drug_name=c["drug_name"],
                     section_title=c["section_title"],
                     content=c["content"],
-                    score=c.get("rerank_score", c["rrf_score"]),
+                    score=c["rrf_score"],
                 )
             )
         return out

@@ -5,9 +5,10 @@ no separate FastAPI server — the UI runs the RAG pipeline directly instead of
 calling HTTP endpoints. Same code paths as the API (rewrite -> on-demand
 index -> retrieve -> generate), so answers are identical.
 
-Heavy models (embeddings, reranker) load lazily on first use and are cached
-across Streamlit reruns. The ChromaDB index starts empty on a fresh deploy;
-the first question about a drug triggers on-demand indexing from DailyMed.
+Embeddings go through the NVIDIA API (no local models to download); the
+retriever is cached across Streamlit reruns. The ChromaDB index starts
+empty on a fresh deploy; the first question about a drug triggers
+on-demand indexing from DailyMed.
 """
 import logging
 import os
@@ -22,7 +23,7 @@ import streamlit as st
 log = logging.getLogger(__name__)
 
 
-@st.cache_resource(show_spinner="Loading models (first run downloads them, takes a few minutes)...")
+@st.cache_resource(show_spinner="Connecting to the pipeline...")
 def _get_retriever():
     from src.config import settings
     from src.embeddings.embedder import Embedder

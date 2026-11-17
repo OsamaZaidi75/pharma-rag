@@ -7,13 +7,29 @@ class Settings(BaseSettings):
 
     chroma_dir: str = "./data/chroma"
 
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
-    embedding_dim: int = 384
+    # Vector store: Qdrant Cloud when BOTH qdrant_url and qdrant_api_key
+    # are set, else local ChromaDB (the default / fallback). No credentials
+    # exist yet, so the deployed app stays on Chroma until they arrive —
+    # cutover is just adding QDRANT_URL + QDRANT_API_KEY to the env file
+    # and re-indexing (the Qdrant collection starts empty).
+    qdrant_url: str | None = None
+    qdrant_api_key: str | None = None
+    qdrant_collection: str = "pharma_rag"
+
+    # Embeddings go through the NVIDIA API (same key + base URL as the LLM
+    # below) — no local model, no torch. The 8b model is 4096-dim; if you
+    # switch EMBEDDING_MODEL, set EMBEDDING_DIM to match, and note the old
+    # ChromaDB index is incompatible with a new dimension (rebuild it).
+    embedding_model: str = "nvidia/nemotron-3.5-embed-8b"
+    embedding_dim: int = 4096
 
     # Hosted default is NVIDIA API (OpenAI-compatible). Ollama / OpenAI /
     # Gemini remain as local alternatives. With no LLM reachable (no key
     # set and no Ollama server), /ask falls back to the built-in extractive
     # answerer — still cited; only /ask-agent needs a working LLM.
+    # NOTE: embeddings always need NVIDIA_API_KEY (no local fallback since
+    # the torch removal), so retrieval/indexing fail without the key even
+    # when the LLM provider is Ollama/OpenAI/Gemini.
     llm_provider: str = "nvidia"  # "nvidia" | "ollama" | "openai" | "gemini"
     nvidia_api_key: str | None = None
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
@@ -27,7 +43,10 @@ class Settings(BaseSettings):
 
     retrieval_top_k: int = 20
     rerank_top_n: int = 5
-    use_reranker: bool = True
+    # Deprecated no-op: cross-encoder reranking was removed with the torch
+    # removal (2026-11-18); RRF order is final. Kept so existing .env files
+    # and callers don't break.
+    use_reranker: bool = False
 
     chunk_max_chars: int = 1200
     chunk_overlap_chars: int = 200

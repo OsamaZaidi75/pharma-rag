@@ -13,6 +13,12 @@ from src.store import vectorstore
 def temp_chroma_dir(monkeypatch):
     temp_dir = tempfile.mkdtemp()
     monkeypatch.setattr(settings, "chroma_dir", temp_dir)
+    # These tests exercise the Chroma fallback: make sure no ambient
+    # Qdrant env can flip backend selection to Qdrant.
+    monkeypatch.delenv("QDRANT_URL", raising=False)
+    monkeypatch.delenv("QDRANT_API_KEY", raising=False)
+    monkeypatch.setattr(settings, "qdrant_url", None)
+    monkeypatch.setattr(settings, "qdrant_api_key", None)
     vectorstore.drop_all()
     yield temp_dir
     vectorstore.drop_all()

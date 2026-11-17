@@ -72,7 +72,6 @@ with st.sidebar:
     st.header("Settings")
     top_k = st.slider("Retrieval candidates", 5, 50, 20)
     top_n = st.slider("Sources in answer", 1, 10, 5)
-    rerank = st.checkbox("Cross-encoder rerank", value=True)
     max_iter = st.slider("Agent max iterations", 1, 15, 8)
     try:
         health = get_health()
@@ -104,7 +103,7 @@ if mode == "Ask":
         with st.spinner("Searching labels and generating answer..."):
             try:
                 data = post_ask(
-                    {"question": question, "top_k": top_k, "top_n": top_n, "rerank": rerank},
+                    {"question": question, "top_k": top_k, "top_n": top_n},
                     timeout=120,
                 )
             except Exception as e:
@@ -148,7 +147,6 @@ elif mode == "Chat":
                             "history": history,
                             "top_k": top_k,
                             "top_n": top_n,
-                            "rerank": rerank,
                         },
                         timeout=180,
                     )

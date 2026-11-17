@@ -35,7 +35,10 @@ _retriever: Retriever | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _retriever
-    # Models load lazily on first use; initialize ChromaDB collection here.
+    # Embeddings are API calls (no local models to load); initialize the
+    # vector store collection here (Qdrant Cloud when configured, else
+    # local ChromaDB). The index may be empty — on-demand indexing fills
+    # it on the first question about a drug.
     vectorstore.init_db()
     yield
 
@@ -62,6 +65,9 @@ class AskRequest(BaseModel):
     history: list[ChatMessage] | None = None
     top_k: int = Field(default=20, ge=1, le=100)
     top_n: int = Field(default=5, ge=1, le=20)
+    # Accepted but ignored: cross-encoder reranking was removed with the
+    # torch removal (2026-11-18); RRF order is final. Kept so old clients
+    # don't break.
     rerank: bool = True
 
 
@@ -147,8 +153,8 @@ def index_drugs(req: IndexRequest):
     Same on-demand path a first question would trigger (DailyMed download
     + embed + upsert), just callable up front — e.g. at deploy time for
     atorvastatin, metformin, lisinopril. Each drug takes ~30-60s on first
-    index (plus a one-off embedding-model download); already-indexed drugs
-    are skipped. Drugs DailyMed has no label for land in `failed`.
+    index; already-indexed drugs are skipped. Drugs DailyMed has no label
+    for land in `failed`.
     """
     retriever = get_retriever()
     indexed: list[str] = []

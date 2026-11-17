@@ -11,10 +11,10 @@ Usage:
 
 Default drugs: atorvastatin, metformin, lisinopril.
 
-Each drug takes ~30-60s on first index, plus a one-off download of the
-embedding model (bge-small, ~130MB) on the very first run. The index lives
-in CHROMA_DIR (default ./data/chroma) — mount it as a volume in Docker so
-pre-indexing survives container restarts.
+Each drug takes ~30-60s on first index. Embeddings go through the NVIDIA
+API (needs NVIDIA_API_KEY). The index lives in CHROMA_DIR (default
+./data/chroma) — mount it as a volume in Docker so pre-indexing survives
+container restarts.
 """
 import argparse
 import os
@@ -37,7 +37,7 @@ def main() -> None:
     args = parser.parse_args()
 
     vectorstore.init_db()
-    print(f"Loading embedding model: {settings.embedding_model}")
+    print(f"Embedding model (NVIDIA API): {settings.embedding_model}")
     embedder = Embedder(settings.embedding_model)
 
     for drug in args.drugs:

@@ -2,16 +2,18 @@
 # `==` pins are the exact `pip freeze` versions the daily test suite
 # (pytest tests/ --ignore=tests/test_embedder_reranker.py --ignore=tests/test_api.py
 #  → 38 passed) is verified against.
-# fastapi, sentence-transformers, streamlit, and openai keep lower bounds:
-# they are not installed in the test venv (the heavy sentence-transformers
-# wheels can't be fetched through the proxy, and fastapi/streamlit/openai are
-# not exercised by the test scope), so they aren't pinned here.
-# Pin them too if you need a byte-reproducible app/embedding setup.
+# fastapi, streamlit, and openai keep lower bounds:
+# they are not installed in the test venv (fastapi/streamlit/openai are
+# not exercised by the daily CI test scope — tests/test_api.py and
+# tests/test_embedder_reranker.py are ignored there), so they aren't pinned here.
+# Pin them too if you need a byte-reproducible app setup.
+# NOTE: sentence-transformers was removed 2026-11-18 — embeddings now go
+# through the NVIDIA API (openai client), so no torch in the image.
 fastapi>=0.110
 uvicorn==0.54.0
 chromadb==1.5.9
+qdrant-client==1.20.0
 rank-bm25==0.2.2
-sentence-transformers>=3.0
 streamlit>=1.35
 pydantic==2.13.5
 pydantic-settings==2.15.0

@@ -1,8 +1,17 @@
-"""ChromaDB storage with hybrid (vector + BM25 keyword) search.
+"""Vector storage with hybrid (vector + BM25 keyword) search.
 
-Hybrid strategy: fetch candidates from BOTH a cosine-similarity vector query
-and BM25 keyword matching over document texts, then fuse the two ranked
-lists with Reciprocal Rank Fusion (RRF).
+Two backends, one interface:
+- Qdrant Cloud when QDRANT_URL and QDRANT_API_KEY are both set
+  (src/store/qdrant_store.py; collection `pharma_rag`, Cosine).
+- Local ChromaDB otherwise (the default; ./data/chroma, collection
+  `label_chunks`).
+
+Backend selection is explicit (get_backend_name) and evaluated on every
+call, so tests can flip it by monkeypatching settings. Hybrid search
+(vector + BM25 fused with RRF) is identical on both backends — only the
+storage calls differ. All embeddings come from the NVIDIA API client in
+both backends; Chroma's default embedding function is never used
+(vectors are always passed explicitly to upsert/query).
 """
 import os
 from typing import Any
@@ -16,33 +25,115 @@ from ..ingest.chunk import Chunk
 COLLECTION_NAME = "label_chunks"
 
 
-def _get_client():
-    os.makedirs(settings.chroma_dir, exist_ok=True)
-    return chromadb.PersistentClient(path=settings.chroma_dir)
+def get_backend_name() -> str:
+    """'qdrant' when Qdrant is configured, else 'chroma' (the fallback).
+
+    Both QDRANT_URL and QDRANT_API_KEY must be set; either one missing
+    means Chroma. No credentials exist yet, so the deployed app stays on
+    Chroma until they are added to the server env file.
+    """
+    if settings.qdrant_url and settings.qdrant_api_key:
+        return "qdrant"
+    return "chroma"
 
 
-def _get_collection(client=None):
-    client = client or _get_client()
-    return client.get_or_create_collection(
-        name=COLLECTION_NAME,
-        metadata={"hnsw:space": "cosine"},
-    )
+def get_backend():
+    """Backend instance for the current settings (fresh each call, so a
+    settings change takes effect immediately and tests stay isolated)."""
+    if get_backend_name() == "qdrant":
+        from .qdrant_store import QdrantBackend
+
+        return QdrantBackend()
+    return ChromaBackend()
+
+
+class ChromaBackend:
+    """Local ChromaDB backend (the default / fallback)."""
+
+    name = "chroma"
+
+    def __init__(self):
+        self._collection = None
+
+    def _get_collection(self):
+        if self._collection is None:
+            os.makedirs(settings.chroma_dir, exist_ok=True)
+            client = chromadb.PersistentClient(path=settings.chroma_dir)
+            self._collection = client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+            )
+        return self._collection
+
+    def init(self) -> None:
+        """Create the ChromaDB collection. Safe to run repeatedly."""
+        self._get_collection()
+
+    def drop(self) -> None:
+        """Delete and recreate the collection."""
+        os.makedirs(settings.chroma_dir, exist_ok=True)
+        client = chromadb.PersistentClient(path=settings.chroma_dir)
+        try:
+            client.delete_collection(COLLECTION_NAME)
+        except Exception:
+            pass
+        self._collection = client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+
+    def count(self) -> int:
+        return self._get_collection().count()
+
+    def delete_setids(self, setids: set[str]) -> None:
+        """Delete all chunks whose metadata setid is in `setids`."""
+        if not setids:
+            return
+        collection = self._get_collection()
+        setids_list = sorted(setids)
+        if len(setids_list) == 1:
+            where_clause = {"setid": setids_list[0]}
+        else:
+            where_clause = {"setid": {"$in": setids_list}}
+        try:
+            collection.delete(where=where_clause)
+        except Exception:
+            pass
+
+    def upsert(self, ids, embeddings, documents, metadatas) -> None:
+        collection = self._get_collection()
+        batch_size = 500
+        for i in range(0, len(ids), batch_size):
+            collection.upsert(
+                ids=ids[i : i + batch_size],
+                embeddings=embeddings[i : i + batch_size],
+                documents=documents[i : i + batch_size],
+                metadatas=metadatas[i : i + batch_size],
+            )
+
+    def query_vector(self, embedding, n: int) -> list[str]:
+        """Top-n chunk ids by cosine similarity, best first."""
+        query_res = self._get_collection().query(
+            query_embeddings=[embedding],
+            n_results=n,
+            include=["documents", "metadatas"],
+        )
+        return query_res["ids"][0] if query_res["ids"] else []
+
+    def get_all(self):
+        """Return (ids, documents, metadatas) for every chunk."""
+        all_data = self._get_collection().get(include=["documents", "metadatas"])
+        return all_data["ids"], all_data["documents"], all_data["metadatas"]
 
 
 def init_db() -> None:
-    """Create ChromaDB client and collection. Safe to run repeatedly."""
-    client = _get_client()
-    _get_collection(client)
+    """Create the vector store collection. Safe to run repeatedly."""
+    get_backend().init()
 
 
 def drop_all() -> None:
     """Delete and recreate the collection."""
-    client = _get_client()
-    try:
-        client.delete_collection(COLLECTION_NAME)
-    except Exception:
-        pass
-    _get_collection(client)
+    get_backend().drop()
 
 
 def rrf_fuse(ranked_id_lists: list[list[Any]], k: int = 60) -> list[tuple[Any, float]]:
@@ -64,18 +155,10 @@ def upsert_chunks(
     if not chunks:
         return 0
 
-    collection = _get_collection()
+    backend = get_backend()
 
     if delete_setids:
-        setids_list = sorted(delete_setids)
-        if len(setids_list) == 1:
-            where_clause = {"setid": setids_list[0]}
-        else:
-            where_clause = {"setid": {"$in": setids_list}}
-        try:
-            collection.delete(where=where_clause)
-        except Exception:
-            pass
+        backend.delete_setids(delete_setids)
 
     ids = []
     seen_ids = set()
@@ -101,16 +184,7 @@ def upsert_chunks(
         for c in chunks
     ]
 
-    # Batch upsert if large
-    batch_size = 500
-    for i in range(0, len(ids), batch_size):
-        collection.upsert(
-            ids=ids[i : i + batch_size],
-            embeddings=embeddings[i : i + batch_size],
-            documents=documents[i : i + batch_size],
-            metadatas=metadatas[i : i + batch_size],
-        )
-
+    backend.upsert(ids, embeddings, documents, metadatas)
     return len(chunks)
 
 
@@ -121,26 +195,18 @@ def hybrid_search(
     candidate_multiplier: int = 3,
 ) -> list[dict]:
     """Vector + BM25 keyword search fused with RRF. Returns chunk dicts with rrf_score."""
-    collection = _get_collection()
-    total_count = collection.count()
+    backend = get_backend()
+    total_count = backend.count()
     if total_count == 0:
         return []
 
     n = min(top_k * candidate_multiplier, total_count)
 
     # 1. Vector candidates
-    query_res = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=n,
-        include=["documents", "metadatas"],
-    )
-    vec_ids = query_res["ids"][0] if query_res["ids"] else []
+    vec_ids = backend.query_vector(query_embedding, n)
 
-    # 2. BM25 keyword candidates over all documents in collection
-    all_data = collection.get(include=["documents", "metadatas"])
-    all_ids = all_data["ids"]
-    all_docs = all_data["documents"]
-    all_metas = all_data["metadatas"]
+    # 2. BM25 keyword candidates over all documents in the store
+    all_ids, all_docs, all_metas = backend.get_all()
 
     tokenized_corpus = [doc.lower().split() for doc in all_docs]
     bm25 = BM25Okapi(tokenized_corpus)
@@ -180,16 +246,15 @@ def hybrid_search(
 
 
 def list_drugs() -> list[str]:
-    """Return distinct drug names in the collection."""
-    collection = _get_collection()
-    if collection.count() == 0:
+    """Return distinct drug names in the store."""
+    backend = get_backend()
+    if backend.count() == 0:
         return []
-    all_data = collection.get(include=["metadatas"])
-    drugs = {m["drug_name"] for m in all_data["metadatas"] if m and "drug_name" in m}
+    _, _, all_metas = backend.get_all()
+    drugs = {m["drug_name"] for m in all_metas if m and "drug_name" in m}
     return sorted(list(drugs))
 
 
 def count_chunks() -> int:
-    """Return total number of chunks in the collection."""
-    collection = _get_collection()
-    return collection.count()
+    """Return total number of chunks in the store."""
+    return get_backend().count()

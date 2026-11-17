@@ -39,6 +39,12 @@ htmlcov/
 # Local databases, vectors & raw label downloads
 data/labels/
 data/chroma/
+data/spl_cache/
+data/hf/
+
+# React frontend (built into the Docker image; never committed)
+frontend/node_modules/
+frontend/dist/
 *.db
 *.sqlite
 *.sqlite3

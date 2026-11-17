@@ -13,7 +13,12 @@ def test_health_endpoint_success():
     with patch("src.api.main.vectorstore.count_chunks", return_value=120):
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "indexed_chunks": 120}
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["indexed_chunks"] == 120
+        # Health also reports the LLM provider status (no secrets); the
+        # `configured` value depends on ambient env, so assert the shape.
+        assert set(data["llm"]) == {"provider", "model", "configured"}
 
 
 def test_health_endpoint_db_failure():

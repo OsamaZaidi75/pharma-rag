@@ -10,7 +10,14 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
 
-    llm_provider: str = "ollama"  # "ollama" | "openai" | "gemini"
+    # Hosted default is NVIDIA API (OpenAI-compatible). Ollama / OpenAI /
+    # Gemini remain as local alternatives. With no LLM reachable (no key
+    # set and no Ollama server), /ask falls back to the built-in extractive
+    # answerer — still cited; only /ask-agent needs a working LLM.
+    llm_provider: str = "nvidia"  # "nvidia" | "ollama" | "openai" | "gemini"
+    nvidia_api_key: str | None = None
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
     ollama_base_url: str = "http://localhost:11434/v1"
     ollama_model: str = "llama3.1"
     openai_api_key: str | None = None
@@ -33,6 +40,9 @@ class Settings(BaseSettings):
         always configured.
         """
         provider = self.llm_provider
+        if provider == "nvidia":
+            return {"provider": provider, "model": self.nvidia_model,
+                    "configured": bool(self.nvidia_api_key)}
         if provider == "gemini":
             return {"provider": provider, "model": self.gemini_model,
                     "configured": bool(self.gemini_api_key)}

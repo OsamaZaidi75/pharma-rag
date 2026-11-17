@@ -46,8 +46,10 @@ def rewrite_question(question: str, history: list[dict] | None) -> str:
                 "content": f"Follow-up question: {question}\nRewritten standalone question:",
             }
         )
+        # Generous budget: the default NVIDIA model reasons first, and its
+        # thinking consumes completion tokens before the answer starts.
         resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=0.0, max_tokens=150
+            model=model, messages=messages, temperature=0.0, max_tokens=512
         )
         rewritten = resp.choices[0].message.content.strip().strip('"').strip()
         return rewritten or question

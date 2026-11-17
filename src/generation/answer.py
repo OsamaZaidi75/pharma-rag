@@ -1,7 +1,9 @@
 """Answer generation with strict grounding and citations.
 
 Works with any OpenAI-compatible chat endpoint:
-- Ollama (default, local, free): http://localhost:11434/v1
+- NVIDIA API (hosted default): set NVIDIA_API_KEY; base URL and model are
+  env-overridable (NVIDIA_BASE_URL, NVIDIA_MODEL)
+- Ollama (local, free): set LLM_PROVIDER=ollama; http://localhost:11434/v1
 - OpenAI: set LLM_PROVIDER=openai and OPENAI_API_KEY
 - Gemini: set LLM_PROVIDER=gemini and GEMINI_API_KEY
   (uses Google's OpenAI-compatible endpoint; free tier is fine for demos)
@@ -68,6 +70,19 @@ def get_llm_client():
     """Return (client, model_name) for the configured provider."""
     from openai import OpenAI
 
+    if settings.llm_provider == "nvidia":
+        if not settings.nvidia_api_key:
+            raise RuntimeError("LLM_PROVIDER=nvidia but NVIDIA_API_KEY is not set")
+        # NVIDIA's API is OpenAI-compatible; same client, different base URL.
+        # No thinking/reasoning kwargs: plain grounded answers don't need them.
+        return (
+            OpenAI(
+                api_key=settings.nvidia_api_key,
+                base_url=settings.nvidia_base_url,
+                max_retries=3,
+            ),
+            settings.nvidia_model,
+        )
     if settings.llm_provider == "openai":
         if not settings.openai_api_key:
             raise RuntimeError("LLM_PROVIDER=openai but OPENAI_API_KEY is not set")
@@ -120,8 +135,14 @@ def generate_answer(
     try:
         client, model = get_llm_client()
         messages = build_prompt(question, chunks, history=history)
+        # max_tokens is generous on purpose: the default NVIDIA model is a
+        # reasoning model — its thinking consumes completion tokens first
+        # (a 16-token budget once returned no content at all), so a tight
+        # budget can starve the answer. The thinking lands in a separate
+        # `reasoning_content` field; the answer is read ONLY from `content`
+        # and reasoning is never surfaced.
         resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=0.1, max_tokens=800
+            model=model, messages=messages, temperature=0.2, max_tokens=2048
         )
         text = resp.choices[0].message.content.strip()
         used_model = model

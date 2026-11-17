@@ -6,11 +6,18 @@
                    rewritten into standalone questions before retrieval.
 - POST /ask-agent -> ReAct agent: the model plans its own tool calls
                    (search/fetch labels), then answers from what it gathered.
+- POST /index     -> pre-index one or more drugs from DailyMed, so the first
+                   question about them is instant instead of ~30-60s.
+
+When the React frontend has been built (frontend/dist exists), this service
+also serves it from / — one container, one port, no separate web server.
 """
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..agent import react as agent_react
@@ -120,6 +127,62 @@ def ask(req: AskRequest):
     )
 
 
+class IndexRequest(BaseModel):
+    """Drugs to pre-index from DailyMed (generic names, e.g. atorvastatin)."""
+
+    drugs: list[str] = Field(min_length=1, max_length=20)
+
+
+class IndexResponse(BaseModel):
+    indexed: list[str] = []
+    already_indexed: list[str] = []
+    failed: list[str] = []
+    total_chunks: int = 0
+
+
+@app.post("/index", response_model=IndexResponse)
+def index_drugs(req: IndexRequest):
+    """Pre-index drugs so the first question about them is instant.
+
+    Same on-demand path a first question would trigger (DailyMed download
+    + embed + upsert), just callable up front — e.g. at deploy time for
+    atorvastatin, metformin, lisinopril. Each drug takes ~30-60s on first
+    index (plus a one-off embedding-model download); already-indexed drugs
+    are skipped. Drugs DailyMed has no label for land in `failed`.
+    """
+    retriever = get_retriever()
+    indexed: list[str] = []
+    already: list[str] = []
+    failed: list[str] = []
+    for drug in req.drugs:
+        name = drug.strip()
+        if not name:
+            continue
+        try:
+            known = {d.lower() for d in vectorstore.list_drugs()}
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"DB unreachable: {e}")
+        if name.lower() in known:
+            already.append(name)
+            continue
+        try:
+            got = ensure_drug_indexed(name, retriever.embedder)
+        except Exception:
+            failed.append(name)
+            continue
+        if got:
+            indexed.append(name)
+        else:
+            failed.append(name)
+    try:
+        total = vectorstore.count_chunks()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"DB unreachable: {e}")
+    return IndexResponse(
+        indexed=indexed, already_indexed=already, failed=failed, total_chunks=total
+    )
+
+
 class AgentAskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=1000)
     max_iterations: int = Field(default=8, ge=1, le=15)
@@ -166,3 +229,13 @@ def ask_agent(req: AgentAskRequest):
         iterations=result.iterations,
         indexed_drugs=result.indexed_drugs,
     )
+
+
+# Serve the React frontend (frontend/dist) from this same service when it has
+# been built. The mount is registered after the API routes, so /health,
+# /drugs, /ask, /ask-agent and /index still resolve to the API; everything
+# else falls through to the static files. In checkouts without a frontend
+# build (dev, tests) the mount is skipped and the API runs standalone.
+_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")

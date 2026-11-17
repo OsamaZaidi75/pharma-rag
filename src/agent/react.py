@@ -189,8 +189,11 @@ def run_agent(
     gathered: dict[Any, RetrievedChunk] = {}
 
     for i in range(1, max_iterations + 1):
+        # Generous budget: the default NVIDIA model reasons first, and its
+        # thinking consumes completion tokens before the turn starts. The
+        # answer is read ONLY from `content`; `reasoning_content` is ignored.
         resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=0.2, max_tokens=500
+            model=model, messages=messages, temperature=0.2, max_tokens=1024
         )
         text = resp.choices[0].message.content.strip()
 

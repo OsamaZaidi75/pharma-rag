@@ -66,19 +66,29 @@ class QdrantBackend:
                     distance=models.Distance.COSINE,
                 ),
             )
-            return
-        # Collection exists: verify its vector size matches the embedding
-        # model, so a stale collection fails here with a clear message
-        # instead of failing later on upsert.
-        info = client.get_collection(self.collection)
-        params = info.config.params.vectors
-        size = params.size if hasattr(params, "size") else None
-        if size is not None and size != settings.embedding_dim:
-            raise RuntimeError(
-                f"Qdrant collection {self.collection!r} has vector size {size} "
-                f"but the embedding model needs {settings.embedding_dim} — "
-                "delete the collection and re-index"
-            )
+        else:
+            # Collection exists: verify its vector size matches the embedding
+            # model, so a stale collection fails here with a clear message
+            # instead of failing later on upsert.
+            info = client.get_collection(self.collection)
+            params = info.config.params.vectors
+            size = params.size if hasattr(params, "size") else None
+            if size is not None and size != settings.embedding_dim:
+                raise RuntimeError(
+                    f"Qdrant collection {self.collection!r} has vector size {size} "
+                    f"but the embedding model needs {settings.embedding_dim} — "
+                    "delete the collection and re-index"
+                )
+        # Qdrant Cloud runs in strict mode: filtered queries are rejected
+        # unless the filtered field has a payload index — delete_setids()
+        # filters on `setid`, so a fresh collection fails its first /index
+        # without this. Creating an index that already exists is a no-op
+        # server-side, so this is safe to run on every init.
+        client.create_payload_index(
+            collection_name=self.collection,
+            field_name="setid",
+            field_schema=models.PayloadSchemaType.KEYWORD,
+        )
 
     def drop(self) -> None:
         """Delete the collection, then recreate it empty."""
